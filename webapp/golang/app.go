@@ -656,7 +656,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		query,
 		me.ID,
 		mime,
-		filedata,
+		[]byte{'a'},
 		r.FormValue("body"),
 	)
 	if err != nil {
@@ -665,6 +665,22 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pid, err := result.LastInsertId()
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	ext := ""
+	switch mime {
+	case "image/jpeg":
+		ext = "jpg"
+	case "image/png":
+		ext = "png"
+	case "image/gif":
+		ext = "gif"
+	}
+
+	err = os.WriteFile(fmt.Sprintf("../public/image/%d.%s", pid, ext), filedata, 0666)
 	if err != nil {
 		log.Print(err)
 		return
