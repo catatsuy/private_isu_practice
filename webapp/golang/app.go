@@ -174,13 +174,34 @@ func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
 	}
 }
 
+type CommentCount struct {
+	PostID int `db:"post_id"`
+	Count  int `db:"count"`
+}
+
 func makePosts(results []Post, CSRFToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
+	ids := make([]interface{}, 0, 30)
+	b := make([]byte, 0, 60)
+
 	for _, p := range results {
-		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
-		if err != nil {
-			return nil, err
+		ids = append(ids, p.ID)
+		b = append(b, ',', '?')
+	}
+
+	commentCounts := make([]CommentCount, 0, 30)
+	err := db.Select(&commentCounts, "SELECT `post_id`, COUNT(*) AS `count` FROM `comments`WHERE `post_id` IN ("+string(b[1:])+") GROUP BY `post_id` ", ids...)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range results {
+		for _, cc := range commentCounts {
+			if p.ID == cc.PostID {
+				p.CommentCount = cc.Count
+				break
+			}
 		}
 
 		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
