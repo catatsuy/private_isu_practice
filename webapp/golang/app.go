@@ -204,7 +204,7 @@ func makePosts(results []Post, CSRFToken string, allComments bool) ([]Post, erro
 			}
 		}
 
-		query := "SELECT `comments`.`id`,`comments`.`post_id`,`comments`.`user_id`,`comments`.`comment`,`comments`.`created_at`,`users`.`account_name` FROM `comments` INNER JOIN `users` ON `comments`.`user_id` = `users`.id WHERE `post_id` = ? ORDER BY `created_at` DESC"
+		query := "SELECT `comments`.`id`,`comments`.`post_id`,`comments`.`user_id`,`comments`.`comment`,`comments`.`created_at`,`users`.`account_name` FROM `comments` INNER JOIN `users` ON `comments`.`user_id` = `users`.id WHERE `post_id` = ? ORDER BY `created_at` ASC"
 		if !allComments {
 			query += " LIMIT 3"
 		}
@@ -212,11 +212,6 @@ func makePosts(results []Post, CSRFToken string, allComments bool) ([]Post, erro
 		err = db.Select(&comments, query, p.ID)
 		if err != nil {
 			return nil, err
-		}
-
-		// reverse
-		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
-			comments[i], comments[j] = comments[j], comments[i]
 		}
 
 		p.Comments = comments
