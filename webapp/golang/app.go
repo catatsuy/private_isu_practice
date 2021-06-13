@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
@@ -197,7 +198,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		return nil, err
 	}
 
-	query := "SELECT `post_id`,`users`.`account_name`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`created_at` ASC) as post_rank from comments where post_id IN (" + string(b[1:]) + ")) AS comments INNER JOIN `users` ON `comments`.`user_id` = `users`.`id`"
+	query := "SELECT `post_id`,`user_id`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`created_at` ASC) as post_rank from comments where post_id IN (" + string(b[1:]) + ")) AS comments"
 	if !allComments {
 		query += " WHERE post_rank <= 3"
 	}
@@ -210,6 +211,8 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	commentsPostID := make(map[int][]Comment)
 
 	for _, c := range comments {
+		u, _ := uCache.Get(c.UserID)
+		c.AccountName = u.AccountName
 		commentsPostID[c.PostID] = append(commentsPostID[c.PostID], c)
 	}
 
@@ -223,11 +226,8 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 		p.Comments = commentsPostID[p.ID]
 
-		err = db.Get(&p.User, "SELECT * FROM `users` WHERE `id` = ?", p.UserID)
-		if err != nil {
-			return nil, err
-		}
-
+		user, _ := uCache.Get(p.UserID)
+		p.User = *user
 		p.CSRFToken = csrfToken
 
 		if p.User.DelFlg == 0 {
@@ -279,8 +279,58 @@ func getTemplPath(filename string) string {
 	return path.Join("templates", filename)
 }
 
+type userCacheSlice struct {
+	// Setが多いならsync.Mutex
+	sync.RWMutex
+	items map[int]*User
+}
+
+func NewCacheSlice() *userCacheSlice {
+	m := make(map[int]*User)
+	c := &userCacheSlice{
+		items: m,
+	}
+	return c
+}
+
+func (c *userCacheSlice) Set(key int, user *User) {
+	c.Lock()
+	c.items[key] = user
+	c.Unlock()
+}
+
+func (c *userCacheSlice) SetDelFlg(key int, value int) {
+	c.Lock()
+	c.items[key].DelFlg = value
+	c.Unlock()
+}
+
+func (c *userCacheSlice) Get(key int) (*User, bool) {
+	c.RLock()
+	v, found := c.items[key]
+	c.RUnlock()
+	return v, found
+}
+
+var uCache = NewCacheSlice()
+
+func setUserCache() error {
+	users := make([]*User, 0, 1100)
+	err := db.Select(&users, "SELECT * FROM users")
+	if err != nil {
+		return err
+	}
+
+	for _, u := range users {
+		uCache.Set(u.ID, u)
+	}
+
+	return nil
+}
+
 func getInitialize(w http.ResponseWriter, r *http.Request) {
 	dbInitialize()
+	setUserCache()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -821,6 +871,8 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 
 	for _, id := range r.Form["uid[]"] {
 		db.Exec(query, 1, id)
+		ii, _ := strconv.Atoi(id)
+		uCache.SetDelFlg(ii, 1)
 	}
 
 	http.Redirect(w, r, "/admin/banned", http.StatusFound)
