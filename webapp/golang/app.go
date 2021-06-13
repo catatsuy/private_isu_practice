@@ -180,7 +180,7 @@ type CommentCount struct {
 	Count  int `db:"count"`
 }
 
-func makePosts(results []Post, CSRFToken string, allComments bool) ([]Post, error) {
+func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
 	ids := make([]interface{}, 0, 30)
@@ -197,6 +197,22 @@ func makePosts(results []Post, CSRFToken string, allComments bool) ([]Post, erro
 		return nil, err
 	}
 
+	query := "SELECT `post_id`,`users`.`account_name`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`created_at` ASC) as post_rank from comments where post_id IN (" + string(b[1:]) + ")) AS comments INNER JOIN `users` ON `comments`.`user_id` = `users`.`id`"
+	if !allComments {
+		query += " WHERE post_rank <= 3"
+	}
+	comments := make([]Comment, 0, 30*3)
+	err = db.Select(&comments, query, ids...)
+	if err != nil {
+		return nil, err
+	}
+
+	commentsPostID := make(map[int][]Comment)
+
+	for _, c := range comments {
+		commentsPostID[c.PostID] = append(commentsPostID[c.PostID], c)
+	}
+
 	for _, p := range results {
 		for _, cc := range commentCounts {
 			if p.ID == cc.PostID {
@@ -205,24 +221,14 @@ func makePosts(results []Post, CSRFToken string, allComments bool) ([]Post, erro
 			}
 		}
 
-		query := "SELECT `comments`.`id`,`comments`.`post_id`,`comments`.`user_id`,`comments`.`comment`,`comments`.`created_at`,`users`.`account_name` FROM `comments` INNER JOIN `users` ON `comments`.`user_id` = `users`.id WHERE `post_id` = ? ORDER BY `created_at` ASC"
-		if !allComments {
-			query += " LIMIT 3"
-		}
-		var comments []Comment
-		err = db.Select(&comments, query, p.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		p.Comments = comments
+		p.Comments = commentsPostID[p.ID]
 
 		err = db.Get(&p.User, "SELECT * FROM `users` WHERE `id` = ?", p.UserID)
 		if err != nil {
 			return nil, err
 		}
 
-		p.CSRFToken = CSRFToken
+		p.CSRFToken = csrfToken
 
 		if p.User.DelFlg == 0 {
 			posts = append(posts, p)
