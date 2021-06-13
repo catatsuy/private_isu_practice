@@ -82,8 +82,6 @@ func init() {
 	memcacheClient := memcache.New(memdAddr)
 	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-
-	profileProfile = profile.Start(profile.ProfilePath("/home/isucon/profile"))
 }
 
 func getProfileStop(w http.ResponseWriter, r *http.Request) {
@@ -948,6 +946,7 @@ func main() {
 		db, err = sqlx.Open("mysql:trace", dsn)
 	} else {
 		db, err = sqlx.Open("mysql", dsn)
+		profileProfile = profile.Start(profile.ProfilePath("/home/isucon/profile"))
 	}
 
 	if err != nil {
