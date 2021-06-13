@@ -191,7 +191,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		return nil, err
 	}
 
-	query := "SELECT `post_id`,`user_id`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`created_at` ASC) as post_rank from comments where post_id IN (" + string(b[1:]) + ")) AS comments"
+	query := "SELECT `post_id`,`user_id`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`id` ASC) as post_rank from comments where post_id IN (" + string(b[1:]) + ")) AS comments"
 	if !allComments {
 		query += " WHERE post_rank <= 3"
 	}
