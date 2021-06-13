@@ -23,6 +23,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
+	"github.com/pkg/profile"
 	proxy "github.com/shogo82148/go-sql-proxy"
 	goji "goji.io"
 	"goji.io/pat"
@@ -32,6 +33,8 @@ import (
 var (
 	db    *sqlx.DB
 	store *gsm.MemcacheStore
+
+	profileProfile interface{ Stop() }
 )
 
 const (
@@ -79,6 +82,12 @@ func init() {
 	memcacheClient := memcache.New(memdAddr)
 	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	profileProfile = profile.Start(profile.ProfilePath("/home/isucon/profile"))
+}
+
+func getProfileStop(w http.ResponseWriter, r *http.Request) {
+	profileProfile.Stop()
 }
 
 func dbInitialize() {
@@ -962,6 +971,7 @@ func main() {
 	mux.HandleFunc(pat.Post("/comment"), postComment)
 	mux.HandleFunc(pat.Get("/admin/banned"), getAdminBanned)
 	mux.HandleFunc(pat.Post("/admin/banned"), postAdminBanned)
+	mux.HandleFunc(pat.Get("/profile/stop"), getProfileStop)
 	mux.HandleFunc(Regexp(regexp.MustCompile(`^/@(?P<accountName>[a-zA-Z]+)$`)), getAccountName)
 	mux.Handle(pat.Get("/*"), http.FileServer(http.Dir("../public")))
 
