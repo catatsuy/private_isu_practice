@@ -3,7 +3,7 @@
 set -x
 
 echo "start deploy ${USER}"
-GOOS=linux go build -o app_linux
+GOOS=linux GOARCH=amd64 go build -o app_linux
 for server in isu-app; do
   ssh -t $server "sudo systemctl stop isu-go"
   rsync -vau templates/ $server:/home/isucon/private_isu/webapp/golang/templates/
