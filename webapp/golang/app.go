@@ -59,7 +59,7 @@ type Post struct {
 	Body         string    `db:"body"`
 	Mime         string    `db:"mime"`
 	CreatedAt    time.Time `db:"created_at"`
-	CommentCount int
+	CommentCount int       `db:"count_comment"`
 	Comments     []Comment
 	User         User
 	CSRFToken    string
@@ -192,18 +192,12 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		b = append(b, ',', '?')
 	}
 
-	commentCounts := make([]CommentCount, 0, 30)
-	err := db.Select(&commentCounts, "SELECT `post_id`, COUNT(*) AS `count` FROM `comments`WHERE `post_id` IN ("+string(b[1:])+") GROUP BY `post_id` ", ids...)
-	if err != nil {
-		return nil, err
-	}
-
 	query := "SELECT `post_id`,`user_id`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`id` ASC) as post_rank from comments where post_id IN (" + string(b[1:]) + ")) AS comments"
 	if !allComments {
 		query += " WHERE post_rank <= 3"
 	}
 	comments := make([]Comment, 0, 30*3)
-	err = db.Select(&comments, query, ids...)
+	err := db.Select(&comments, query, ids...)
 	if err != nil {
 		return nil, err
 	}
@@ -217,13 +211,6 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	}
 
 	for _, p := range results {
-		for _, cc := range commentCounts {
-			if p.ID == cc.PostID {
-				p.CommentCount = cc.Count
-				break
-			}
-		}
-
 		p.Comments = commentsPostID[p.ID]
 
 		user, _ := uCache.Get(p.UserID)
@@ -466,7 +453,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `id` DESC LIMIT 30")
+	err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at`,`count_comment` FROM `posts` ORDER BY `id` DESC LIMIT 30")
 	if err != nil {
 		log.Print(err)
 		return
@@ -510,7 +497,7 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `id` DESC LIMIT 30", user.ID)
+	err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at`,`count_comment` FROM `posts` WHERE `user_id` = ? ORDER BY `id` DESC LIMIT 30", user.ID)
 	if err != nil {
 		log.Print(err)
 		return
@@ -594,7 +581,7 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	results := []Post{}
-	err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `id` DESC LIMIT 30", t.Format(ISO8601Format))
+	err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at`,`count_comment` FROM `posts` WHERE `created_at` <= ? ORDER BY `id` DESC LIMIT 30", t.Format(ISO8601Format))
 	if err != nil {
 		log.Print(err)
 		return
@@ -951,6 +938,8 @@ func main() {
 		log.Fatalf("Failed to connect to DB: %s.", err.Error())
 	}
 	defer db.Close()
+
+	setUserCache()
 
 	mux := goji.NewMux()
 
