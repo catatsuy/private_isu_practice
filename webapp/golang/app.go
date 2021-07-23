@@ -181,18 +181,20 @@ type CommentCount struct {
 	Count  int `db:"count"`
 }
 
+func InStatement(count int) string {
+	return strings.Repeat(",?", count)[1:]
+}
+
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
 	ids := make([]interface{}, 0, 30)
-	b := make([]byte, 0, 60)
 
 	for _, p := range results {
 		ids = append(ids, p.ID)
-		b = append(b, ',', '?')
 	}
 
-	query := "SELECT `post_id`,`user_id`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`id` ASC) as post_rank from comments where post_id IN (" + string(b[1:]) + ")) AS comments"
+	query := "SELECT `post_id`,`user_id`,`comment`,`comments`.`created_at` FROM (select `post_id`,`user_id`,`comment`,`comments`.`created_at`,ROW_NUMBER() OVER (PARTITION BY post_id ORDER BY `comments`.`id` ASC) as post_rank from comments where post_id IN (" + InStatement(len(results)) + ")) AS comments"
 	if !allComments {
 		query += " WHERE post_rank <= 3"
 	}
